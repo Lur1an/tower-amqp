@@ -2,6 +2,8 @@
 name = "lapin-tower-worker"
 version = "0.1.0"
 edition = "2021"
+description = "Framework for building AMQP workers with lapin and tower"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0.86"
