@@ -16,9 +16,6 @@ pub enum PublishError<T: AMQPTaskResult> {
 #[derive(Debug, thiserror::Error)]
 pub enum HandlerError<T: AMQPTask> {
     #[error(transparent)]
-    Lapin(#[from] lapin::Error),
-
-    #[error(transparent)]
     Publish(PublishError<T::TaskResult>),
 
     #[error(transparent)]

@@ -10,8 +10,12 @@ anyhow = "1.0.86"
 futures = "0.3.30"
 lapin = "2.5.0"
 thiserror = "1.0.63"
-tokio = "1.39.2"
+tokio = {version = "1.39.2", features = ["rt-multi-thread", "macros"]}
 tokio-stream = "0.1.15"
 tower = { version = "0.4.13", features = ["full"] }
 tracing = "0.1.40"
 trait-variant = "0.1.2"
+
+[dev-dependencies]
+sqlx = { version = "0.8.0", features = ["sqlite", "runtime-tokio"] }
+tracing-subscriber = "0.3.18"
