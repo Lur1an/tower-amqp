@@ -1,6 +1,5 @@
-use tower::BoxError;
-
 use crate::{AMQPTask, AMQPTaskResult};
+use tower::BoxError;
 
 /// Error that can happen when publishing the result of a task
 #[derive(Debug, thiserror::Error)]
