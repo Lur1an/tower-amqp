@@ -1,7 +1,6 @@
 pub use lapin;
 
 mod error;
-mod worker;
 
 use lapin::types::FieldTable;
 use tokio::task::JoinSet;
