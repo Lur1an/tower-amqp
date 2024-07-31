@@ -17,9 +17,8 @@ use tokio_stream::StreamExt;
 use self::error::{HandlerError, PublishError};
 
 pub trait AMQPTaskResult: Sized + Send + Debug {
-    type EncodeError: std::error::Error + Send + Sync + 'static + Debug;
+    type EncodeError: std::error::Error + Send + Sync + 'static;
 
-    /// Encode the task result into a byte slice, this allows tasks to use different serialization formats
     fn encode(self) -> Result<Vec<u8>, Self::EncodeError>;
 
     fn publish_exchange() -> &'static str;
@@ -28,9 +27,9 @@ pub trait AMQPTaskResult: Sized + Send + Debug {
     fn publish(
         self,
         channel: &lapin::Channel,
-    ) -> impl Future<Output = Result<(), BoxError>> + Send {
+    ) -> impl Future<Output = Result<(), PublishError<Self>>> + Send {
         async {
-            let payload = self.encode()?;
+            let payload = self.encode().map_err(PublishError::Encode)?;
             channel
                 .basic_publish(
                     Self::publish_exchange(),
@@ -60,7 +59,7 @@ impl AMQPTaskResult for () {
         unreachable!()
     }
 
-    async fn publish(self, _channel: &lapin::Channel) -> Result<(), BoxError> {
+    async fn publish(self, _channel: &lapin::Channel) -> Result<(), PublishError<Self>> {
         Ok(())
     }
 }
@@ -167,6 +166,7 @@ where
         Ok(())
     }
 
+    /// Start consuming tasks from the AMQP queue
     pub async fn consume(
         mut self,
         consume_options: BasicConsumeOptions,
@@ -212,6 +212,7 @@ where
                         delivery_tag = delivery.delivery_tag,
                         "Delivery handled successfully"
                     );
+                    delivery.ack(BasicAckOptions::default()).await?;
                     continue;
                 }
                 Err(e) => {
