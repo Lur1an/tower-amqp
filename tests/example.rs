@@ -5,9 +5,9 @@ use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
 use std::time::Duration;
 
-use lapin_tower_worker::{AMQPTask, AMQPWorker, WorkerConfig};
 use tower::limit::ConcurrencyLimitLayer;
 use tower::Service;
+use tower_amqp::{AMQPTask, AMQPWorker, WorkerConfig};
 
 #[derive(Debug)]
 struct MyTask;
