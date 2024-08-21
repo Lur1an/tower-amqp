@@ -166,8 +166,11 @@ where
         }
     }
 
+    #[tracing::instrument(level = "info", skip(self), fields(
+        consumer = self.consumer_tag(),
+        task = task.debug()
+    ))]
     async fn handle_task(&mut self, task: T) -> Result<(), HandlerError<T>> {
-        tracing::info!(consumer = self.consumer_tag(), ?task, "Processing task");
         let task_result: T::TaskResult = self.service.call(task).await.map_err(Into::into)?;
         task_result
             .publish(&self.inner.channel)
@@ -222,6 +225,10 @@ where
             .await?;
         loop {
             let mut worker = self.ready().await?;
+            tracing::info!(
+                consumer = worker.consumer_tag(),
+                "Consumer ready, waiting for delivery"
+            );
             if let Some(attempted_delivery) = consumer.next().await {
                 tokio::spawn(async move {
                     let delivery = match attempted_delivery {
@@ -261,7 +268,7 @@ where
                             return Ok(());
                         }
                         Err(e) => {
-                            tracing::error!(consumer = ?worker.consumer_tag(), ?e, "Task handler failed");
+                            tracing::error!(consumer = ?worker.consumer_tag(), ?e, "Task handler returned error");
                             delivery
                                 .nack(BasicNackOptions {
                                     multiple: false,
