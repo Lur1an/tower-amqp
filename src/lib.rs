@@ -2,7 +2,6 @@ pub use lapin;
 
 mod error;
 
-use lapin::message::Delivery;
 use lapin::types::FieldTable;
 use tokio::task::JoinSet;
 use tower::{BoxError, Layer, Service, ServiceExt};
@@ -73,7 +72,7 @@ pub trait AMQPTask: Sized + Debug {
     type TaskResult: AMQPTaskResult;
 
     /// Decode a task from a byte slice, this allows tasks to use different serialization formats
-    fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError>;
+    fn decode(data: Vec<u8>) -> Result<Self, Self::DecodeError>;
     fn queue() -> &'static str;
 
     /// Debug representation of the task, override this if your task has such a huge payload that
@@ -151,6 +150,10 @@ where
         &self.inner.consumer_tag
     }
 
+    pub fn channel(&self) -> &lapin::Channel {
+        &self.inner.channel
+    }
+
     pub fn config(&self) -> &WorkerConfig {
         &self.inner.config
     }
@@ -173,7 +176,7 @@ where
         consumer = self.consumer_tag(),
         task = task.debug()
     ))]
-    async fn handle_task(&mut self, task: T, delivery: &Delivery) -> Result<(), HandlerError<T>> {
+    async fn handle_task(&mut self, task: T) -> Result<(), HandlerError<T>> {
         let task_result: T::TaskResult = self.service.call(task).await.map_err(Into::into)?;
         task_result
             .publish(&self.inner.channel)
@@ -245,7 +248,8 @@ where
                             return Ok(());
                         }
                     };
-                    let task = match T::decode(&delivery.data) {
+                    let delivery_tag = delivery.delivery_tag;
+                    let task = match T::decode(delivery.data) {
                         Ok(task) => task,
                         Err(e) => {
                             tracing::error!(
@@ -255,28 +259,38 @@ where
                                 "Failed to decode task"
                             );
                             if worker.config().ack_on_decode_error {
-                                delivery.ack(BasicAckOptions::default()).await?;
+                                worker
+                                    .channel()
+                                    .basic_ack(delivery_tag, BasicAckOptions::default())
+                                    .await?;
                             }
                             return Ok(());
                         }
                     };
-                    match worker.handle_task(task, &delivery).await {
+                    match worker.handle_task(task).await {
                         Ok(_) => {
                             tracing::info!(
                                 consumer = worker.consumer_tag(),
                                 delivery_tag = delivery.delivery_tag,
                                 "Delivery handled successfully"
                             );
-                            delivery.ack(BasicAckOptions::default()).await?;
+                            worker
+                                .channel()
+                                .basic_ack(delivery_tag, BasicAckOptions::default())
+                                .await?;
                             return Ok(());
                         }
                         Err(e) => {
                             tracing::error!(consumer = ?worker.consumer_tag(), ?e, "Task handler returned error");
-                            delivery
-                                .nack(BasicNackOptions {
-                                    multiple: false,
-                                    requeue: true,
-                                })
+                            worker
+                                .channel()
+                                .basic_nack(
+                                    delivery_tag,
+                                    BasicNackOptions {
+                                        multiple: false,
+                                        requeue: true,
+                                    },
+                                )
                                 .await?;
                         }
                     }
