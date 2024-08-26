@@ -2,6 +2,7 @@ pub use lapin;
 
 mod error;
 
+use lapin::message::Delivery;
 use lapin::types::FieldTable;
 use tokio::task::JoinSet;
 use tower::{BoxError, Layer, Service, ServiceExt};
@@ -22,19 +23,21 @@ pub trait AMQPTaskResult: Sized + Send + Debug {
 
     fn encode(self) -> Result<Vec<u8>, Self::EncodeError>;
 
-    fn publish_exchange() -> &'static str;
-    fn publish_routing_key() -> &'static str;
+    fn publish_exchange(&self) -> String;
+    fn publish_routing_key(&self) -> String;
 
     fn publish(
         self,
         channel: &lapin::Channel,
     ) -> impl Future<Output = Result<(), PublishError<Self>>> + Send {
         async {
+            let exchange = self.publish_exchange();
+            let routing_key = self.publish_routing_key();
             let payload = self.encode().map_err(PublishError::Encode)?;
             channel
                 .basic_publish(
-                    Self::publish_exchange(),
-                    Self::publish_routing_key(),
+                    &exchange,
+                    &routing_key,
                     BasicPublishOptions::default(),
                     &payload,
                     AMQPProperties::default(),
@@ -52,11 +55,11 @@ impl AMQPTaskResult for () {
         unreachable!("empty result can't be encoded")
     }
 
-    fn publish_exchange() -> &'static str {
+    fn publish_exchange(&self) -> String {
         unreachable!("empty result has no exchange")
     }
 
-    fn publish_routing_key() -> &'static str {
+    fn publish_routing_key(&self) -> String {
         unreachable!("empty result has no routing key")
     }
 
@@ -170,7 +173,7 @@ where
         consumer = self.consumer_tag(),
         task = task.debug()
     ))]
-    async fn handle_task(&mut self, task: T) -> Result<(), HandlerError<T>> {
+    async fn handle_task(&mut self, task: T, delivery: &Delivery) -> Result<(), HandlerError<T>> {
         let task_result: T::TaskResult = self.service.call(task).await.map_err(Into::into)?;
         task_result
             .publish(&self.inner.channel)
@@ -257,7 +260,7 @@ where
                             return Ok(());
                         }
                     };
-                    match worker.handle_task(task).await {
+                    match worker.handle_task(task, &delivery).await {
                         Ok(_) => {
                             tracing::info!(
                                 consumer = worker.consumer_tag(),
