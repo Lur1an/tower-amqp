@@ -1,6 +1,7 @@
-pub use lapin;
-
 mod error;
+
+pub use error::PublishError;
+pub use lapin;
 
 use lapin::types::FieldTable;
 use tokio::task::JoinSet;
@@ -11,11 +12,10 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
 
+use self::error::HandlerError;
 use lapin::options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions};
 use lapin::protocol::basic::AMQPProperties;
 use tokio_stream::StreamExt;
-
-use self::error::{HandlerError, PublishError};
 
 pub trait AMQPTaskResult: Sized + Send + Debug {
     type EncodeError: std::error::Error + Send + Sync + 'static;
