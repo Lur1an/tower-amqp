@@ -1,6 +1,7 @@
-pub use lapin;
-
 mod error;
+
+pub use error::PublishError;
+pub use lapin;
 
 use lapin::types::FieldTable;
 use tokio::task::JoinSet;
@@ -11,30 +12,31 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
 
+use self::error::HandlerError;
 use lapin::options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions};
 use lapin::protocol::basic::AMQPProperties;
 use tokio_stream::StreamExt;
-
-use self::error::{HandlerError, PublishError};
 
 pub trait AMQPTaskResult: Sized + Send + Debug {
     type EncodeError: std::error::Error + Send + Sync + 'static;
 
     fn encode(self) -> Result<Vec<u8>, Self::EncodeError>;
 
-    fn publish_exchange() -> &'static str;
-    fn publish_routing_key() -> &'static str;
+    fn publish_exchange(&self) -> String;
+    fn publish_routing_key(&self) -> String;
 
     fn publish(
         self,
         channel: &lapin::Channel,
     ) -> impl Future<Output = Result<(), PublishError<Self>>> + Send {
         async {
+            let exchange = self.publish_exchange();
+            let routing_key = self.publish_routing_key();
             let payload = self.encode().map_err(PublishError::Encode)?;
             channel
                 .basic_publish(
-                    Self::publish_exchange(),
-                    Self::publish_routing_key(),
+                    &exchange,
+                    &routing_key,
                     BasicPublishOptions::default(),
                     &payload,
                     AMQPProperties::default(),
@@ -52,11 +54,11 @@ impl AMQPTaskResult for () {
         unreachable!("empty result can't be encoded")
     }
 
-    fn publish_exchange() -> &'static str {
+    fn publish_exchange(&self) -> String {
         unreachable!("empty result has no exchange")
     }
 
-    fn publish_routing_key() -> &'static str {
+    fn publish_routing_key(&self) -> String {
         unreachable!("empty result has no routing key")
     }
 
@@ -70,7 +72,7 @@ pub trait AMQPTask: Sized + Debug {
     type TaskResult: AMQPTaskResult;
 
     /// Decode a task from a byte slice, this allows tasks to use different serialization formats
-    fn decode(bytes: &[u8]) -> Result<Self, Self::DecodeError>;
+    fn decode(data: Vec<u8>) -> Result<Self, Self::DecodeError>;
     fn queue() -> &'static str;
 
     /// Debug representation of the task, override this if your task has such a huge payload that
@@ -148,6 +150,10 @@ where
         &self.inner.consumer_tag
     }
 
+    pub fn channel(&self) -> &lapin::Channel {
+        &self.inner.channel
+    }
+
     pub fn config(&self) -> &WorkerConfig {
         &self.inner.config
     }
@@ -166,8 +172,11 @@ where
         }
     }
 
+    #[tracing::instrument(level = "info", skip(self), fields(
+        consumer = self.consumer_tag(),
+        task = task.debug()
+    ))]
     async fn handle_task(&mut self, task: T) -> Result<(), HandlerError<T>> {
-        tracing::info!(consumer = self.consumer_tag(), ?task, "Processing task");
         let task_result: T::TaskResult = self.service.call(task).await.map_err(Into::into)?;
         task_result
             .publish(&self.inner.channel)
@@ -222,6 +231,10 @@ where
             .await?;
         loop {
             let mut worker = self.ready().await?;
+            tracing::info!(
+                consumer = worker.consumer_tag(),
+                "Consumer ready, waiting for delivery"
+            );
             if let Some(attempted_delivery) = consumer.next().await {
                 tokio::spawn(async move {
                     let delivery = match attempted_delivery {
@@ -235,7 +248,8 @@ where
                             return Ok(());
                         }
                     };
-                    let task = match T::decode(&delivery.data) {
+                    let delivery_tag = delivery.delivery_tag;
+                    let task = match T::decode(delivery.data) {
                         Ok(task) => task,
                         Err(e) => {
                             tracing::error!(
@@ -245,7 +259,10 @@ where
                                 "Failed to decode task"
                             );
                             if worker.config().ack_on_decode_error {
-                                delivery.ack(BasicAckOptions::default()).await?;
+                                worker
+                                    .channel()
+                                    .basic_ack(delivery_tag, BasicAckOptions::default())
+                                    .await?;
                             }
                             return Ok(());
                         }
@@ -257,16 +274,23 @@ where
                                 delivery_tag = delivery.delivery_tag,
                                 "Delivery handled successfully"
                             );
-                            delivery.ack(BasicAckOptions::default()).await?;
+                            worker
+                                .channel()
+                                .basic_ack(delivery_tag, BasicAckOptions::default())
+                                .await?;
                             return Ok(());
                         }
                         Err(e) => {
-                            tracing::error!(consumer = ?worker.consumer_tag(), ?e, "Task handler failed");
-                            delivery
-                                .nack(BasicNackOptions {
-                                    multiple: false,
-                                    requeue: true,
-                                })
+                            tracing::error!(consumer = ?worker.consumer_tag(), ?e, "Task handler returned error");
+                            worker
+                                .channel()
+                                .basic_nack(
+                                    delivery_tag,
+                                    BasicNackOptions {
+                                        multiple: false,
+                                        requeue: true,
+                                    },
+                                )
                                 .await?;
                         }
                     }
