@@ -177,6 +177,7 @@ where
         task = task.debug()
     ))]
     async fn handle_task(&mut self, task: T) -> Result<(), HandlerError<T>> {
+        tracing::info!("Calling service");
         let task_result: T::TaskResult = self.service.call(task).await.map_err(Into::into)?;
         task_result
             .publish(&self.inner.channel)
@@ -282,7 +283,13 @@ where
                             return Ok(());
                         }
                         Err(e) => {
-                            tracing::error!(consumer = ?worker.consumer_tag(), delivery_tag = delivery.delivery_tag, ?e, task = task_debug, "Task handler returned error");
+                            tracing::error!(
+                                consumer = ?worker.consumer_tag(),
+                                delivery_tag = delivery.delivery_tag,
+                                ?e,
+                                task = task_debug,
+                                "Task handler returned error"
+                            );
                             worker
                                 .channel()
                                 .basic_nack(
