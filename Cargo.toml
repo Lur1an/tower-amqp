@@ -1,8 +1,8 @@
 [package]
-name = "lapin-tower-worker"
-version = "0.1.4"
+name = "tower-amqp"
+version = "0.1.0"
 edition = "2021"
-description = "Framework for building AMQP workers with lapin and tower"
+description = "Framework for building AMQP workers with tower"
 license = "MIT"
 
 [dependencies]
@@ -10,9 +10,9 @@ anyhow = "1.0.86"
 futures = "0.3.30"
 lapin = "2.5.0"
 thiserror = "1.0.63"
-tokio = {version = "1.39.2", features = ["rt-multi-thread", "macros"]}
 tokio-stream = "0.1.15"
 tower = { version = "0.4.13", features = ["full"] }
+tokio = {version = "1.39.2", features = ["rt-multi-thread", "macros"]}
 tracing = "0.1.40"
 trait-variant = "0.1.2"
 

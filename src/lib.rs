@@ -4,7 +4,6 @@ pub use error::PublishError;
 pub use lapin;
 
 use lapin::types::FieldTable;
-use tokio::task::JoinSet;
 use tower::{BoxError, Layer, Service, ServiceExt};
 
 use std::convert::Infallible;
@@ -198,15 +197,6 @@ where
             inner: self.inner.clone(),
             _phantom: std::marker::PhantomData,
         })
-    }
-
-    pub fn consume_spawn(
-        self,
-        consume_options: BasicConsumeOptions,
-        consume_arguments: FieldTable,
-        set: &mut JoinSet<Result<(), BoxError>>,
-    ) {
-        set.spawn(self.consume(consume_options, consume_arguments));
     }
 
     /// Start consuming tasks from the AMQP queue

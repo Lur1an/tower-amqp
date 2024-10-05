@@ -1181,23 +1181,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lapin-tower-worker"
-version = "0.1.4"
-dependencies = [
- "anyhow",
- "futures",
- "lapin",
- "sqlx",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tower",
- "tracing",
- "tracing-subscriber",
- "trait-variant",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2580,6 +2563,23 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "tower-amqp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "lapin",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "trait-variant",
 ]
 
 [[package]]

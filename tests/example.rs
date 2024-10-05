@@ -92,8 +92,7 @@ async fn test_worker() {
         WorkerConfig::default(),
     )
     .add_layer(ConcurrencyLimitLayer::new(8));
-    let mut set = tokio::task::JoinSet::new();
-    worker.consume_spawn(Default::default(), Default::default(), &mut set);
+    tokio::spawn(worker.consume(Default::default(), Default::default()));
     for _ in 0..20 {
         channel
             .basic_publish("", QUEUE, Default::default(), &[], Default::default())
